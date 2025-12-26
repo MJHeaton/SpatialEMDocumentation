@@ -20,8 +20,55 @@
 <h1>Fit & Predict</h1>
 <div class="card">
 <h3><code>fit_spatial_em()</code></h3>
-<p>Main user-facing wrapper for fitting Spatial EM models.</p>
+<h4>Purpose</h4>
+<p>
+  Fit a Spatial EM model using a stable, user-facing wrapper that dispatches to a
+  family- and ML-model-specific fitter (e.g., <code>fit_spatial_em_probit_ranger()</code>).
+  This keeps your top-level API consistent even as you add new families/models.
+</p>
+
+<h4>Example call</h4>
+<pre><code># Example: probit + ranger backend
+fit &lt;- fit_spatial_em(
+  formula  = y ~ x1 + x2 + x3,
+  data     = dat,
+  coords   = c("lon", "lat"),   # or a matrix/data.frame of coordinates, depending on backend
+  family   = "probit",
+  ml_model = "ranger",
+  ... # Additional arguments forwarded directly to the specific fitter 
+)</code></pre>
+
+<h4>Inputs</h4>
+<ul>
+  <li><code>formula</code> — An R formula specifying the response and covariates (e.g., <code>y ~ x1 + x2</code>).</li>
+  <li><code>data</code> — Data frame containing the response/covariate columns referenced in <code>formula</code>.</li>
+  <li><code>coords</code> — Spatial coordinates for each row in <code>data</code>. Typically either:
+    <ul>
+      <li>a character vector of coordinate column names (e.g., <code>c("lon","lat")</code>), or</li>
+      <li>a numeric vector indicating the column numbers of coordinates in <code>data</code> (e.g., <code>c(1,2)</code>), or</li>
+      <li>a numeric matrix/data.frame with one row per observation.</li>
+    </ul>
+  </li>
+  <li><code>family</code> — Observation family. Currently supports <code>"probit"</code> (more planned later).</li>
+  <li><code>ml_model</code> — Mean-model choice. Currently supports <code>"ranger"</code> (more planned later).</li>
+  <li><code>...</code> — Additional arguments forwarded directly to the specific fitter
+    <code>fit_spatial_em_{family}_{ml_model}()</code> (e.g., spatial covariance parameters, EM controls, ML hyperparameters).</li>
+</ul>
+
+<h4>Outputs</h4>
+<ul>
+  <li>
+    A fitted model object returned by the model-specific fitter, with class augmented to include
+    <code>"spatial_em"</code> on top:
+    <code>class(fit) = c("spatial_em", &lt;model-specific-class&gt;)</code>.
+  </li>
+  <li>
+    The exact contents (stored Vecchia structure, trained ML model, training metadata, etc.)
+    are determined by the backend fitter.
+  </li>
+</ul>
 </div>
+
 <div class="card">
 <h3><code>predict.spatial_em()</code></h3>
 <p>S3 predict method for fitted Spatial EM objects.</p>
