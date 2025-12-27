@@ -137,35 +137,36 @@ cv_res &lt;- tune_spatial_em(
 <div class="card"><h3><code>cv_spatial_em_probit_ranger()</code></h3>
 <h4>Purpose</h4>
 <p>
-  High-level tuning wrapper for Spatial EM models. This function provides a stable,
-  user-facing interface for cross-validation and hyperparameter tuning, dispatching to a
-  family- and ML-model-specific CV implementation (currently
-  <code>cv_spatial_em_probit_ranger()</code>).
+  Run cross-validation over a joint hyperparameter grid for a probit Spatial EM model with a
+  ranger mean model. This function:
+  (1) validates the spatial grid and expands the ranger grid into runnable configs,
+  (2) builds CV folds <em>once</em> (fixed across all configurations),
+  (3) evaluates every combination of spatial parameters and ranger hyperparameters across K folds,
+  (4) computes cutoff-free metrics (Brier, log-loss, AUC) plus timing,
+  and (5) returns a results table sorted by mean Brier score.
 </p>
 
 <h4>Example call</h4>
-<pre><code># Spatial covariance tuning grid
+<pre><code># Spatial covariance grid (validated by validate_spatial_grid())
 spatial_grid &lt;- expand.grid(
-  range      = c(0.1, 0.25, 0.5),
-  nugget     = c(0, 1e-6),
-  smoothness = c(0.5, 1.5),
+  range         = c(0.1, 0.25, 0.5),
+  nugget        = c(0, 1e-6),
+  smoothness    = c(0.5, 1.5),
   max_neighbors = c(20, 30)
 )
 
-# ML (ranger) tuning grid
-ml_grid &lt;- expand.grid(
+# Ranger hyperparameter grid (expanded by expand_ranger_grid())
+ranger_grid &lt;- expand.grid(
   num.trees = c(300, 500),
   mtry      = c(2, 4)
 )
 
-cv_res &lt;- tune_spatial_em(
+res &lt;- cv_spatial_em_probit_ranger(
   formula       = y ~ x1 + x2 + x3,
   data          = dat,
   coords        = c("lon","lat"),
-  family        = "probit",
-  ml_model      = "ranger",
   spatial_grid  = spatial_grid,
-  ml_grid       = ml_grid,
+  ranger_grid   = ranger_grid,
   cv_scheme     = "mixed",
   K             = 10,
   sprinkle_frac = 0.10,
@@ -177,75 +178,87 @@ cv_res &lt;- tune_spatial_em(
   num_cores     = 4,
   num_cores_vecchia = 2,
   verbose       = TRUE
-)</code></pre>
+)
+
+# Best configuration (sorted by brier_mean)
+best &lt;- res[1, ]</code></pre>
 
 <h4>Inputs</h4>
 <ul>
-  <li><code>formula</code> — Model formula specifying the response and covariates.</li>
+  <li><code>formula</code> — Model formula specifying binary response and covariates.</li>
 
   <li><code>data</code> — Data frame containing response, covariates, and coordinate columns.</li>
 
   <li><code>coords</code> — Coordinate specification passed to <code>get_locs_matrix()</code>
       (typically a character vector of column names).</li>
 
-  <li><code>family</code> — Observation family. Currently only <code>"probit"</code> is supported.</li>
+  <li><code>spatial_grid</code> — Data frame/grid of spatial correlation parameters. This is first passed through
+      <code>validate_spatial_grid()</code> and must (after validation) supply:
+      <ul>
+        <li><code>range</code>, <code>nugget</code>, <code>smoothness</code>, and <code>max_neighbors</code></li>
+      </ul>
+  </li>
 
-  <li><code>ml_model</code> — Mean-model choice. Currently only <code>"ranger"</code> is supported.</li>
-
-  <li><code>spatial_grid</code> — Grid of spatial correlation parameters to evaluate. Must be provided.
-      This is validated/normalized by the backend CV routine.</li>
-
-  <li><code>ml_grid</code> — Grid of ML hyperparameters (e.g., ranger settings) to evaluate. Must be provided.</li>
+  <li><code>ranger_grid</code> — Data frame/grid of ranger hyperparameters. Each row is one configuration; rows are
+      converted into runnable argument lists via <code>expand_ranger_grid()</code>.</li>
 
   <li><code>cv_scheme</code> — Cross-validation sampling scheme:
     <ul>
-      <li><code>"random"</code> — random pointwise train/validation splits</li>
-      <li><code>"block"</code> — spatial block CV (implemented as mixed with <code>sprinkle_frac = 0</code>)</li>
-      <li><code>"mixed"</code> — spatial block CV with a random “sprinkle” of points added to training
-          to enable short-distance prediction</li>
+      <li><code>"random"</code> — random pointwise folds via <code>make_folds_random()</code></li>
+      <li><code>"block"</code> — spatial block folds implemented as mixed with <code>sprinkle_frac = 0</code></li>
+      <li><code>"mixed"</code> — spatial block folds plus a random “sprinkle” of training points (short-distance prediction)</li>
     </ul>
+    Block/mixed folds are built with <code>make_folds_mixed(..., block_method = "kmeans")</code>.
   </li>
 
-  <li><code>K</code> — Number of CV folds.</li>
+  <li><code>K</code> — Number of folds.</li>
 
-  <li><code>sprinkle_frac</code> — Fraction of randomly sampled points added to training folds
-      when <code>cv_scheme = "mixed"</code>. Ignored when <code>cv_scheme = "random"</code>.
-      When <code>cv_scheme = "block"</code>, this is effectively treated as 0.</li>
+  <li><code>sprinkle_frac</code> — Fraction of randomly sampled points added to training folds when
+      <code>cv_scheme = "mixed"</code>. Ignored for <code>"random"</code>. Effectively 0 for <code>"block"</code>.</li>
 
-  <li><code>seed</code> — Random seed used for fold construction (folds are fixed across configurations).</li>
+  <li><code>seed</code> — Random seed for fold creation (folds are built once and reused across all configurations).</li>
 
-  <li><code>em_max_iter</code>, <code>em_tol</code>, <code>damping</code> — EM algorithm controls
-      passed through to the backend fitter during CV.</li>
+  <li><code>em_max_iter</code>, <code>em_tol</code>, <code>damping</code> — EM controls passed into
+      <code>fit_spatial_em_probit_ranger()</code> for each fold fit.</li>
 
-  <li><code>ordering</code> — Vecchia ordering strategy (<code>"maxmin"</code> or <code>"nn"</code>).</li>
+  <li><code>ordering</code> — Vecchia ordering strategy (<code>"maxmin"</code> or <code>"nn"</code>), passed to the fitter.</li>
 
-  <li><code>num_cores</code> — Number of CPU cores used for outer parallelism over hyperparameter configurations.</li>
+  <li><code>num_cores</code> — Outer parallelism over hyperparameter configurations. If <code>num_cores &gt; 1</code>,
+      CV configs are evaluated via <code>future.apply::future_lapply()</code> using a multisession plan.</li>
 
-  <li><code>num_cores_vecchia</code> — Number of CPU cores used for Vecchia construction inside a single fit.
-      (The backend avoids nested parallelism by forcing this to 1 when <code>num_cores &gt; 1</code>.)</li>
+  <li><code>num_cores_vecchia</code> — Inner parallelism for Vecchia structure building inside each fit.
+      To avoid nested parallelism, the function sets Vecchia cores to 1 whenever <code>num_cores &gt; 1</code>
+      (i.e., when outer parallelism is active).</li>
 
-  <li><code>verbose</code> — If <code>TRUE</code>, prints progress messages (scheme, K, number of configs, cores).</li>
-
-  <li><code>...</code> — Additional arguments forwarded to the backend CV implementation.</li>
+  <li><code>verbose</code> — If <code>TRUE</code>, prints a summary line about scheme, K, number of configurations, and cores.</li>
 </ul>
 
 <h4>Outputs</h4>
 <ul>
   <li>
-    Returns the results data frame produced by the backend CV function (currently
-    <code>cv_spatial_em_probit_ranger()</code>), sorted by <code>brier_mean</code> (lower is better).
+    Returns a data frame with one row per (spatial × ranger) configuration, sorted by
+    <code>brier_mean</code> (ascending).
   </li>
   <li>
-    The returned data frame includes (at minimum) the columns:
+    The output includes:
     <ul>
-      <li><code>range</code>, <code>nugget</code>, <code>smoothness</code>, <code>max_neighbors</code></li>
-      <li><code>brier_mean</code>, <code>logloss_mean</code>, <code>auc_mean</code></li>
-      <li><code>fit_time_mean</code>, <code>pred_time_mean</code></li>
-      <li>plus the ranger hyperparameter columns from <code>ml_grid</code></li>
+      <li>Spatial parameters:
+        <code>spatial_row</code>, <code>range</code>, <code>nugget</code>, <code>smoothness</code>, <code>max_neighbors</code>
+      </li>
+      <li>Mean performance (across folds):
+        <code>brier_mean</code>, <code>logloss_mean</code>, <code>auc_mean</code>
+      </li>
+      <li>Mean timing (across folds):
+        <code>fit_time_mean</code>, <code>pred_time_mean</code>
+      </li>
+      <li>Ranger hyperparameter columns copied from the corresponding row of <code>ranger_grid</code></li>
     </ul>
   </li>
+  <li class="muted">
+    Notes: Metrics are cutoff-free. Probabilities are produced by <code>predict_spatial_em_probit_ranger(..., type = "response")</code>,
+    then scored with <code>brier_score()</code>, <code>log_loss()</code>, and <code>auc_rank()</code>.
+  </li>
 </ul>
-
 </div>
 
 </div></main>
