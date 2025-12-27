@@ -271,6 +271,86 @@ best &lt;- res[1, ]</code></pre>
 </ul>
 </div>
 
+<div class="card" id="extract_best_config">
+<h3><code>extract_best_config()</code></h3>
+<h4>Purpose</h4>
+<p>
+  Extract the “best” hyperparameter configuration(s) from a Spatial EM tuning / CV results
+  data frame. This function identifies metric columns automatically, determines whether
+  higher or lower values are better, and returns the row(s) corresponding to optimal
+  performance.
+</p>
+
+<h4>Example call</h4>
+<pre><code># Full CV results from tune_spatial_em()
+cv_res &lt;- tune_spatial_em(...)
+
+# 1) Get best configuration for each available metric
+best_all &lt;- extract_best_config(cv_res)
+# returns a named list, e.g.:
+# $brier_mean
+# $logloss_mean
+# $auc_mean
+
+# 2) Get best configuration for a specific metric (flexible matching)
+best_brier &lt;- extract_best_config(cv_res, metric = "brier")
+best_auc    &lt;- extract_best_config(cv_res, metric = "auc_mean")
+best_logloss &lt;- extract_best_config(cv_res, metric = "logloss")</code></pre>
+
+<h4>Inputs</h4>
+<ul>
+  <li><code>tune_output</code> — A non-empty data frame returned by
+      <code>tune_spatial_em()</code>.
+      Must contain metric columns ending in <code>_mean</code>.
+  </li>
+
+  <li><code>metric</code> — Optional metric selector. If <code>NULL</code> (default),
+      the function returns the best configuration for <em>each</em> available metric.
+      If provided, it must identify a single metric column via:
+      <ul>
+        <li>exact match (case-sensitive or case-insensitive), or</li>
+        <li>unique substring match (e.g., <code>"auc"</code> → <code>"auc_mean"</code>).</li>
+      </ul>
+      If the match is ambiguous or no match is found, an error is thrown.
+  </li>
+</ul>
+
+<h4>Outputs</h4>
+<ul>
+  <li>
+    If <code>metric = NULL</code>:
+    <ul>
+      <li>Returns a named list of data frames.</li>
+      <li>Each element corresponds to one metric (e.g., <code>brier_mean</code>,
+          <code>logloss_mean</code>, <code>auc_mean</code>) and contains a single row:
+          the best-performing configuration under that metric.
+      </li>
+    </ul>
+  </li>
+
+  <li>
+    If <code>metric</code> is specified:
+    <ul>
+      <li>Returns a single-row data frame corresponding to the best configuration
+          under the chosen metric.</li>
+    </ul>
+  </li>
+
+  <li class="muted">
+    Notes:
+    <ul>
+      <li>Metric columns are detected as those ending in <code>_mean</code>,
+          excluding timing columns (<code>fit_time_mean</code>,
+          <code>pred_time_mean</code>).</li>
+      <li>Metrics containing <code>"auc"</code> (case-insensitive) are treated as
+          <em>higher-is-better</em>; all other metrics are treated as
+          <em>lower-is-better</em>.</li>
+      <li>Rows with non-finite metric values (<code>NA</code>, <code>Inf</code>) are ignored.</li>
+    </ul>
+  </li>
+</ul>
+</div>
+
 </div></main>
 <footer><div class="wrap">Generated 2025-12-25</div></footer>
 </body></html>
