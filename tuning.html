@@ -335,19 +335,6 @@ best_logloss &lt;- extract_best_config(cv_res, metric = "logloss")</code></pre>
           under the chosen metric.</li>
     </ul>
   </li>
-
-  <li class="muted">
-    Notes:
-    <ul>
-      <li>Metric columns are detected as those ending in <code>_mean</code>,
-          excluding timing columns (<code>fit_time_mean</code>,
-          <code>pred_time_mean</code>).</li>
-      <li>Metrics containing <code>"auc"</code> (case-insensitive) are treated as
-          <em>higher-is-better</em>; all other metrics are treated as
-          <em>lower-is-better</em>.</li>
-      <li>Rows with non-finite metric values (<code>NA</code>, <code>Inf</code>) are ignored.</li>
-    </ul>
-  </li>
 </ul>
 </div>
 
