@@ -8,24 +8,210 @@
 <body>
 <header><div class="wrap nav">
 <a href="index.html">Home</a>
+<a href="vignette.html">Vignette</a>
 <a href="fit-predict.html">Fit & Predict</a>
 <a href="tuning.html">Tuning</a>
 <a href="vecchia.html">Vecchia</a>
 <a href="utilities.html">Utilities</a>
-<a href="ml-helpers.html">ML helpers</a>
+<a href="ml-backend.html">ML Backends</a>
 <a href="concepts.html">Concepts</a>
 </div></header>
 <main><div class="wrap">
 
 <h1>Utilities</h1>
-<div class="card"><h3><code>get_locs_matrix()</code></h3></div>
-<div class="card"><h3><code>validate_spatial_grid()</code></h3></div>
-<div class="card"><h3><code>make_folds_random()</code></h3></div>
-<div class="card"><h3><code>make_blocks_kmeans()</code></h3></div>
-<div class="card"><h3><code>make_folds_mixed()</code></h3></div>
-<div class="card"><h3><code>brier_score()</code></h3></div>
-<div class="card"><h3><code>auc_rank()</code></h3></div>
-<div class="card"><h3><code>log_loss()</code></h3></div>
+<div class="card">
+  <h2 style="margin-top:0">Table of contents</h2>
+  <ul>
+    <li><a href="#get_locs_matrix"><code>get_locs_matrix()</code></a></li>
+    <li><a href="#validate_spatial_grid"><code>validate_spatial_grid()</code></a></li>
+    <li><a href="#make_folds_random"><code>make_folds_random()</code></a></li>
+    <li><a href="#make_blocks_kmeans"><code>make_blocks_kmeans()</code></a></li>
+    <li><a href="#make_folds_mixed"><code>make_folds_mixed()</code></a></li>
+    <li><a href="#brier_score"><code>brier_score()</code></a></li>
+    <li><a href="#auc_rank"><code>auc_rank()</code></a></li>
+    <li><a href="#log_loss"><code>log_loss()</code></a></li>
+  </ul>
+</div>
+
+<div class="card" id="get_locs_matrix">
+<h3><code>get_locs_matrix()</code></h3>
+
+<h4>Purpose</h4>
+<p>Extract a numeric matrix of coordinates from a data.frame using a flexible `coords` specification. Supports column names (character vector), numeric column indices, or a two-column matrix/data.frame provided directly.</p>
+
+<h4>Example call</h4>
+<pre><code>locs <- get_locs_matrix(data = dat, coords = c('lon','lat'))</code></pre>
+
+<h4>Inputs</h4>
+<ul>
+  <li><code>data</code> — data.frame containing coordinate columns or a matrix/data.frame of coordinates.</li>
+  <li><code>coords</code> — specification of coordinate columns: character vector, integer indices, or a 2-column matrix/data.frame.</li>
+  <li><code>n_expected</code> — optional integer, if provided the function checks the number of rows matches.</li>
+</ul>
+
+<h4>Outputs</h4>
+<ul>
+  <li>Returns an <code>n x 2</code> numeric matrix of coordinates (columns in the order provided).</li>
+  <li>Raises informative errors if columns are missing or cannot be coerced to numeric.</li>
+</ul>
+</div>
+
+<div class="card" id="validate_spatial_grid">
+<h3><code>validate_spatial_grid()</code></h3>
+
+<h4>Purpose</h4>
+<p>Validate and normalize a spatial parameter grid. Ensures required columns exist (range, nugget, smoothness, max_neighbors), applies sensible defaults, and removes invalid rows.</p>
+
+<h4>Example call</h4>
+<pre><code>spatial_grid <- validate_spatial_grid(spatial_grid)</code></pre>
+
+<h4>Inputs</h4>
+<ul>
+  <li><code>spatial_grid</code> — data.frame with one row per spatial configuration. May include columns <code>range</code>, <code>nugget</code>, <code>smoothness</code>, <code>max_neighbors</code>.</li>
+</ul>
+
+<h4>Outputs</h4>
+<ul>
+  <li>Returns a cleaned data.frame with required columns and validated values (types coerced, NA-handling applied).</li>
+  <li>Throws an error for empty or malformed grids.</li>
+</ul>
+</div>
+
+<div class="card" id="make_folds_random">
+<h3><code>make_folds_random()</code></h3>
+
+<h4>Purpose</h4>
+<p>Create K random train/test folds for cross-validation.</p>
+
+<h4>Example call</h4>
+<pre><code>folds <- make_folds_random(n = nrow(dat), K = 5, seed = 1)</code></pre>
+
+<h4>Inputs</h4>
+<ul>
+  <li><code>n</code> — number of observations.</li>
+  <li><code>K</code> — number of folds.</li>
+  <li><code>seed</code> — RNG seed for reproducible fold assignment.</li>
+</ul>
+
+<h4>Outputs</h4>
+<ul>
+  <li>Returns a list of length <code>K</code>, each element a list with elements <code>train</code> and <code>test</code> (integer indices).</li>
+</ul>
+</div>
+
+<div class="card" id="make_blocks_kmeans">
+<h3><code>make_blocks_kmeans()</code></h3>
+
+<h4>Purpose</h4>
+<p>Partition spatial locations into a specified number of spatial blocks using k-means on coordinates (useful for block CV).</p>
+
+<h4>Example call</h4>
+<pre><code>blocks <- make_blocks_kmeans(locs, K = 10, seed = 1)</code></pre>
+
+<h4>Inputs</h4>
+<ul>
+  <li><code>locs</code> — numeric matrix of coordinates (n x 2).</li>
+  <li><code>K</code> — desired number of spatial blocks.</li>
+  <li><code>seed</code> — optional RNG seed.</li>
+</ul>
+
+<h4>Outputs</h4>
+<ul>
+  <li>Returns an integer vector of block labels (length n), numbered 1..K.</li>
+</ul>
+</div>
+
+<div class="card" id="make_folds_mixed">
+<h3><code>make_folds_mixed()</code></h3>
+
+<h4>Purpose</h4>
+<p>Create K folds that are spatially-blocked but include a random 'sprinkle' fraction of points in each training set to probe short-distance prediction.</p>
+
+<h4>Example call</h4>
+<pre><code>folds <- make_folds_mixed(locs, K = 5, sprinkle_frac = 0.1, block_method = 'kmeans', seed = 1)</code></pre>
+
+<h4>Inputs</h4>
+<ul>
+  <li><code>locs</code> — numeric matrix of coordinates.</li>
+  <li><code>K</code> — number of folds (blocks) to create.</li>
+  <li><code>sprinkle_frac</code> — fraction of points to randomly sprinkle into training.</li>
+  <li><code>block_method</code> — method to create blocks (e.g., <code>'kmeans'</code>).</li>
+  <li><code>seed</code> — RNG seed for reproducible splits.</li>
+</ul>
+
+<h4>Outputs</h4>
+<ul>
+  <li>Returns a list of length <code>K</code>, each element with <code>train</code> and <code>test</code> integer index vectors.</li>
+  <li>Block structure is stable across configurations (used by CV routines).</li>
+</ul>
+</div>
+
+<div class="card" id="brier_score">
+<h3><code>brier_score()</code></h3>
+
+<h4>Purpose</h4>
+<p>Compute the Brier score for probabilistic binary predictions (mean squared error between predicted probability and binary outcome).</p>
+
+<h4>Example call</h4>
+<pre><code>brier <- brier_score(p_hat, y_true)</code></pre>
+
+<h4>Inputs</h4>
+<ul>
+  <li><code>p_hat</code> — numeric vector of predicted probabilities (0..1).</li>
+  <li><code>y</code> — integer/factor/vector of binary outcomes (0/1 or two-level factor).</li>
+</ul>
+
+<h4>Outputs</h4>
+<ul>
+  <li>Returns a single numeric Brier score (mean squared error).</li>
+  <li>Handles NA in inputs by removing corresponding pairs with a warning or error depending on implementation.</li>
+</ul>
+</div>
+
+<div class="card" id="auc_rank">
+<h3><code>auc_rank()</code></h3>
+
+<h4>Purpose</h4>
+<p>Compute a ranking-based AUC (area under the ROC curve) for binary predictions, using a nonparametric rank method.</p>
+
+<h4>Example call</h4>
+<pre><code>auc <- auc_rank(p_hat, y_true)</code></pre>
+
+<h4>Inputs</h4>
+<ul>
+  <li><code>p_hat</code> — numeric vector of predicted probabilities/scores.</li>
+  <li><code>y</code> — binary outcomes (0/1 or factor).</li>
+</ul>
+
+<h4>Outputs</h4>
+<ul>
+  <li>Returns numeric AUC (0.5 = random, 1 = perfect).</li>
+  <li>May return NA if only one class is present in <code>y</code>.</li>
+</ul>
+</div>
+
+<div class="card" id="log_loss">
+<h3><code>log_loss()</code></h3>
+
+<h4>Purpose</h4>
+<p>Compute the negative log-likelihood (log-loss) for probabilistic binary predictions, numerically stabilized.</p>
+
+<h4>Example call</h4>
+<pre><code>ll <- log_loss(p_hat, y_true)</code></pre>
+
+<h4>Inputs</h4>
+<ul>
+  <li><code>p_hat</code> — numeric vector of predicted probabilities (clamped away from 0/1 internally).</li>
+  <li><code>y</code> — binary outcomes (0/1).</li>
+</ul>
+
+<h4>Outputs</h4>
+<ul>
+  <li>Returns the mean log-loss (negative log-likelihood per observation).</li>
+  <li>Implementation clamps probabilities to a small epsilon to avoid -Inf.</li>
+</ul>
+</div>
+
 
 </div></main>
 <footer><div class="wrap">Generated 2025-12-25</div></footer>

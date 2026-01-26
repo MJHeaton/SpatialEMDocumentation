@@ -8,21 +8,146 @@
 <body>
 <header><div class="wrap nav">
 <a href="index.html">Home</a>
+<a href="vignette.html">Vignette</a>
 <a href="fit-predict.html">Fit & Predict</a>
 <a href="tuning.html">Tuning</a>
 <a href="vecchia.html">Vecchia</a>
 <a href="utilities.html">Utilities</a>
-<a href="ml-helpers.html">ML helpers</a>
+<a href="ml-backend.html">ML Backends</a>
 <a href="concepts.html">Concepts</a>
 </div></header>
 <main><div class="wrap">
 
 <h1>Vecchia & Whitening</h1>
-<div class="card"><h3><code>build_vecchia_structure()</code></h3></div>
-<div class="card"><h3><code>compute_one_i()</code></h3></div>
-<div class="card"><h3><code>whiten_covariates()</code></h3></div>
-<div class="card"><h3><code>reconstruct_correlated_field()</code></h3></div>
-<div class="card"><h3><code>compute_pred_coeffs()</code></h3></div>
+
+<div class="card">
+  <h2 style="margin-top:0">Table of contents</h2>
+  <ul>
+    <li><a href="#build_vecchia_structure"><code>build_vecchia_structure()</code></a></li>
+    <li><a href="#compute_one_i"><code>compute_one_i()</code></a></li>
+    <li><a href="#whiten_covariates"><code>whiten_covariates()</code></a></li>
+    <li><a href="#reconstruct_correlated_field"><code>reconstruct_correlated_field()</code></a></li>
+    <li><a href="#compute_pred_coeffs"><code>compute_pred_coeffs()</code></a></li>
+  </ul>
+</div>
+
+<div class="card" id="build_vecchia_structure">
+<h3><code>build_vecchia_structure()</code></h3>
+
+<h4>Purpose</h4>
+<p>Construct Vecchia approximation data structures (ordering, neighbor lists, coefficients, conditional variances) needed to efficiently represent a latent Gaussian field for spatial EM.</p>
+
+<h4>Example call</h4>
+<pre><code>vecchia <- build_vecchia_structure(locs = locs, max_neighbors = 30, correlation_params = corr_params, ordering = 'maxmin', num_cores = 1)</code></pre>
+
+<h4>Inputs</h4>
+<ul>
+  <li><code>locs</code> — numeric matrix of training coordinates (n × 2).</li>
+  <li><code>max_neighbors</code> — maximum number of neighbors used in the Vecchia approximation.</li>
+  <li><code>correlation_params</code> — list of spatial parameters (range, nugget, smoothness) passed to the correlation function.</li>
+  <li><code>ordering</code> — ordering strategy (e.g., <code>'maxmin'</code>, <code>'coordinate'</code>, <code>'random'</code>)</li>
+  <li><code>num_cores</code> — number of cores to use when building the structure (parallel neighbor search).</li>
+</ul>
+
+<h4>Outputs</h4>
+<ul>
+  <li>Returns a list with elements: <code>order</code> (Vecchia permutation), <code>neighbor_list</code>, <code>coef_list</code>, <code>cond_vars</code>, and <code>locs_ord</code> (locations in Vecchia order).</li>
+  <li>Used later for whitening, reconstruction, and fast conditional prediction.</li>
+</ul>
+</div>
+
+<div class="card" id="compute_one_i">
+<h3><code>compute_one_i()</code></h3>
+
+<h4>Purpose</h4>
+<p>Compute Vecchia coefficients (Bi) and conditional variance (vi) for a single site i given its neighbors Ci. Typically used internally when building the Vecchia structure.</p>
+
+<h4>Example call</h4>
+<pre><code>res_i <- compute_one_i(i = 10, locs_ord = locs_ord, corr_fun = corr_fun, params = corr_params, max_neighbors = 30)</code></pre>
+
+<h4>Inputs</h4>
+<ul>
+  <li><code>i</code> — integer index in Vecchia order for which to compute coefficients.</li>
+  <li><code>locs_ord</code> — locations arranged in Vecchia order.</li>
+  <li><code>Ci</code> — indices of candidate neighbors (subset of previous indices in Vecchia order).</li>
+  <li><code>corr_fun</code> / <code>params</code> — correlation function and its parameters.</li>
+</ul>
+
+<h4>Outputs</h4>
+<ul>
+  <li>Returns a list containing <code>Bi</code> (numeric vector of coefficients) and <code>vi</code> (conditional variance scalar).</li>
+  <li>Handles small numerical regularization to ensure positive-definite neighbor covariance matrices.</li>
+</ul>
+</div>
+
+<div class="card" id="whiten_covariates">
+<h3><code>whiten_covariates()</code></h3>
+
+<h4>Purpose</h4>
+<p>Transform covariate matrix X into whitened covariates Xw that remove spatial correlation induced by the Vecchia approximation. Whitening enables ML mean models to operate on conditionally independent targets.</p>
+
+<h4>Example call</h4>
+<pre><code>Xw <- whiten_covariates(X, vecchia)</code></pre>
+
+<h4>Inputs</h4>
+<ul>
+  <li><code>X</code> — design matrix (n × p) in original data order.</li>
+  <li><code>vecchia</code> — Vecchia object produced by <code>build_vecchia_structure()</code>.</li>
+</ul>
+
+<h4>Outputs</h4>
+<ul>
+  <li>Returns <code>Xw</code>, a matrix of whitened covariates in the ORIGINAL data order (not Vecchia order).</li>
+  <li>Whitening uses the Vecchia coefficients and conditional variances to decorrelate each row.</li>
+</ul>
+</div>
+
+<div class="card" id="reconstruct_correlated_field">
+<h3><code>reconstruct_correlated_field()</code></h3>
+
+<h4>Purpose</h4>
+<p>Given a whitened latent field Zw, reconstruct the correlated latent field Z (originally correlated under the Gaussian process prior) using Vecchia reconstruction.</p>
+
+<h4>Example call</h4>
+<pre><code>Z <- reconstruct_correlated_field(Zw, vecchia)</code></pre>
+
+<h4>Inputs</h4>
+<ul>
+  <li><code>Zw</code> — whitened latent vector (length n) in ORIGINAL data order.</li>
+  <li><code>vecchia</code> — Vecchia object with neighbor lists, coefficients, and ordering.</li>
+</ul>
+
+<h4>Outputs</h4>
+<ul>
+  <li>Returns <code>Z</code>, the correlated latent field in ORIGINAL data order.</li>
+  <li>Used to compute thresholds in the E-step and for final output.</li>
+</ul>
+</div>
+
+<div class="card" id="compute_pred_coeffs">
+<h3><code>compute_pred_coeffs()</code></h3>
+
+<h4>Purpose</h4>
+<p>Compute Vecchia-style prediction coefficients (B_u, v_u) for a new prediction location u, using a subset of training locations as neighbors.</p>
+
+<h4>Example call</h4>
+<pre><code>pred_info <- compute_pred_coeffs(u_coord = new_loc, locs_train_ord = locs_ord, cor_params = corr_params, max_neighbors = 30)</code></pre>
+
+<h4>Inputs</h4>
+<ul>
+  <li><code>u_coord</code> — numeric vector of length 2 with the new location coordinates.</li>
+  <li><code>locs_train_ord</code> — training locations in Vecchia order.</li>
+  <li><code>cor_params</code> — spatial correlation parameters.</li>
+  <li><code>max_neighbors</code> — maximum neighbors to use for prediction.</li>
+</ul>
+
+<h4>Outputs</h4>
+<ul>
+  <li>Returns a list with <code>neighbors_ord_idx</code> (indices in Vecchia order), <code>B_u</code> (prediction coefficients), and <code>v_u</code> (conditional variance at u).</li>
+  <li>Handles small numerical clamps for <code>v_u</code> to preserve stability.</li>
+</ul>
+</div>
+
 
 </div></main>
 <footer><div class="wrap">Generated 2025-12-25</div></footer>

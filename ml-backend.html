@@ -1,0 +1,243 @@
+<!doctype html>
+<html><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>ML backends</title>
+<link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+<header><div class="wrap nav">
+<a href="index.html">Home</a>
+<a href="vignette.html">Vignette</a>
+<a href="fit-predict.html">Fit & Predict</a>
+<a href="tuning.html">Tuning</a>
+<a href="vecchia.html">Vecchia</a>
+<a href="utilities.html">Utilities</a>
+<a href="ml-backends.html">ML Backends</a>
+<a href="concepts.html">Concepts</a>
+</div></header>
+<main><div class="wrap">
+
+<h1>ML backends</h1>
+
+<div class="card">
+  <h2 style="margin-top:0">Table of contents</h2>
+  <ul>
+    <li><a href="#expand_ml_grid"><code>expand_ml_grid()</code></a></li>
+    <li><a href="#get_ml_backend"><code>get_ml_backend()</code></a></li>
+    <li><a href="#fit_ml_lm"><code>fit_ml_lm()</code></a></li>
+    <li><a href="#predict_ml_lm"><code>predict_ml_lm()</code></a></li>
+    <li><a href="#fit_ml_ranger"><code>fit_ml_ranger()</code></a></li>
+    <li><a href="#predict_ml_ranger"><code>predict_ml_ranger()</code></a></li>
+    <li><a href="#fit_ml_xgboost"><code>fit_ml_xgboost()</code></a></li>
+    <li><a href="#predict_ml_xgboost"><code>predict_ml_xgboost()</code></a></li>
+  </ul>
+</div>
+
+<div class="card" id="expand_ml_grid">
+<h3><code>expand_ml_grid()</code></h3>
+
+<h4>Purpose</h4>
+<p>Expand an ML hyperparameter grid into a list of per-configuration <code>ml_args</code> lists. If <code>ml_grid</code> is <code>NULL</code>, returns a single default configuration (<code>list(list())</code>).</p>
+
+<h4>Example call</h4>
+<pre><code># NULL grid -&gt; one default config
+cfgs &lt;- expand_ml_grid(&quot;xgboost&quot;, NULL)
+
+# data.frame grid -&gt; one list per row
+ml_grid &lt;- expand.grid(
+  nrounds = c(200, 400),
+  eta = c(0.05, 0.1),
+  max_depth = c(4, 6)
+)
+cfgs &lt;- expand_ml_grid(&quot;xgboost&quot;, ml_grid)</code></pre>
+
+<h4>Inputs</h4>
+<ul>
+  <li><code>ml_model</code> — ML backend name: <code>"lm"</code>, <code>"ranger"</code>, or <code>"xgboost"</code>.</li>
+  <li><code>ml_grid</code> — <code>data.frame</code> of hyperparameters (one row per configuration) or <code>NULL</code> for a single default configuration.</li>
+</ul>
+
+<h4>Outputs</h4>
+<ul>
+  <li>Returns a list of lists, where each element is an <code>ml_args</code> list corresponding to one configuration.</li>
+  <li>Errors if <code>ml_grid</code> is not a data.frame (unless NULL) or has zero rows.</li>
+</ul>
+</div>
+
+<div class="card" id="get_ml_backend">
+<h3><code>get_ml_backend()</code></h3>
+
+<h4>Purpose</h4>
+<p>Return a backend descriptor (name, fit function, predict function) for the requested ML model. Used throughout Spatial EM to call the right ML engine with a consistent interface.</p>
+
+<h4>Example call</h4>
+<pre><code>backend &lt;- get_ml_backend(&quot;ranger&quot;)
+
+ml_fit &lt;- backend$fit(Xw, Zw, ml_args = list(num.trees = 500))
+mu_w   &lt;- backend$predict(ml_fit, Xw)</code></pre>
+
+<h4>Inputs</h4>
+<ul>
+  <li><code>ml_model</code> — ML backend name: <code>"lm"</code>, <code>"ranger"</code>, or <code>"xgboost"</code>.</li>
+</ul>
+
+<h4>Outputs</h4>
+<ul>
+  <li>Returns a list with fields <code>name</code>, <code>fit</code>, and <code>predict</code>.</li>
+  <li>The returned <code>fit</code>/<code>predict</code> are function pointers (e.g., <code>fit_ml_xgboost</code>, <code>predict_ml_xgboost</code>).</li>
+</ul>
+</div>
+
+<div class="card" id="fit_ml_lm">
+<h3><code>fit_ml_lm()</code></h3>
+
+<h4>Purpose</h4>
+<p>Fit a linear mean model using <code>stats::lm.fit()</code>. This is the baseline backend (no extra package dependencies).</p>
+
+<h4>Example call</h4>
+<pre><code>ml_fit &lt;- fit_ml_lm(Xw, Zw)
+mu_w   &lt;- predict_ml_lm(ml_fit, Xw)</code></pre>
+
+<h4>Inputs</h4>
+<ul>
+  <li><code>X</code> — design matrix (will be coerced via <code>.as_matrix()</code>).</li>
+  <li><code>y</code> — numeric response vector.</li>
+  <li><code>ml_args</code> — unused (included for API consistency).</li>
+</ul>
+
+<h4>Outputs</h4>
+<ul>
+  <li>Returns the <code>lm.fit</code> object (contains <code>coefficients</code>, etc.).</li>
+</ul>
+</div>
+
+<div class="card" id="predict_ml_lm">
+<h3><code>predict_ml_lm()</code></h3>
+
+<h4>Purpose</h4>
+<p>Predict from an <code>lm</code> backend fit using matrix multiplication <code>Xnew %*% coefficients</code>.</p>
+
+<h4>Example call</h4>
+<pre><code>mu_new &lt;- predict_ml_lm(ml_fit, Xw_new)</code></pre>
+
+<h4>Inputs</h4>
+<ul>
+  <li><code>ml_fit</code> — fitted object returned by <code>fit_ml_lm()</code>.</li>
+  <li><code>Xnew</code> — new design matrix (coerced via <code>.as_matrix()</code>).</li>
+</ul>
+
+<h4>Outputs</h4>
+<ul>
+  <li>Returns a numeric prediction vector.</li>
+</ul>
+</div>
+
+<div class="card" id="fit_ml_ranger">
+<h3><code>fit_ml_ranger()</code></h3>
+
+<h4>Purpose</h4>
+<p>Fit a regression random forest using <code>ranger::ranger()</code>. Requires the <code>ranger</code> package. Hyperparameters are supplied through <code>ml_args</code> and merged with base arguments.</p>
+
+<h4>Example call</h4>
+<pre><code>ml_fit &lt;- fit_ml_ranger(
+  Xw, Zw,
+  ml_args = list(num.trees = 500, mtry = 5, min.node.size = 5)
+)
+mu_w &lt;- predict_ml_ranger(ml_fit, Xw)</code></pre>
+
+<h4>Inputs</h4>
+<ul>
+  <li><code>X</code> — design matrix (coerced via <code>.as_matrix()</code>).</li>
+  <li><code>y</code> — numeric response vector.</li>
+  <li><code>ml_args</code> — named list of arguments passed to <code>ranger::ranger()</code> (overrides defaults).</li>
+</ul>
+
+<h4>Outputs</h4>
+<ul>
+  <li>Returns a fitted <code>ranger</code> model object.</li>
+  <li>Errors if the <code>ranger</code> package is not installed.</li>
+</ul>
+</div>
+
+<div class="card" id="predict_ml_ranger">
+<h3><code>predict_ml_ranger()</code></h3>
+
+<h4>Purpose</h4>
+<p>Predict from a fitted <code>ranger</code> regression model. Requires the <code>ranger</code> package.</p>
+
+<h4>Example call</h4>
+<pre><code>mu_new &lt;- predict_ml_ranger(ml_fit, Xw_new)</code></pre>
+
+<h4>Inputs</h4>
+<ul>
+  <li><code>ml_fit</code> — fitted object returned by <code>fit_ml_ranger()</code>.</li>
+  <li><code>Xnew</code> — new design matrix (coerced via <code>.as_matrix()</code>).</li>
+</ul>
+
+<h4>Outputs</h4>
+<ul>
+  <li>Returns a numeric prediction vector (<code>predict(... )$predictions</code>).</li>
+</ul>
+</div>
+
+<div class="card" id="fit_ml_xgboost">
+<h3><code>fit_ml_xgboost()</code></h3>
+
+<h4>Purpose</h4>
+<p>Fit an XGBoost regression model using <code>xgboost::xgb.train()</code>. Requires the <code>xgboost</code> package. Convention: pass XGBoost hyperparameters as top-level fields in <code>ml_args</code>. <code>nrounds</code> is handled separately; other keys override default <code>params</code>.</p>
+
+<h4>Example call</h4>
+<pre><code>ml_fit &lt;- fit_ml_xgboost(
+  Xw, Zw,
+  ml_args = list(
+    nrounds = 300,
+    eta = 0.05,
+    max_depth = 6,
+    subsample = 0.8,
+    colsample_bytree = 0.8,
+    seed = 1,
+    verbose = 0
+  )
+)
+mu_w &lt;- predict_ml_xgboost(ml_fit, Xw)</code></pre>
+
+<h4>Inputs</h4>
+<ul>
+  <li><code>X</code> — design matrix (coerced via <code>.as_matrix()</code>).</li>
+  <li><code>y</code> — numeric response vector.</li>
+  <li><code>ml_args</code> — named list of XGBoost options. Recognized keys include <code>nrounds</code>, <code>seed</code>, <code>verbose</code>, and parameter overrides such as <code>eta</code>, <code>max_depth</code>, <code>subsample</code>, <code>colsample_bytree</code>, <code>min_child_weight</code>, <code>gamma</code>, <code>lambda</code>, <code>alpha</code>.</li>
+</ul>
+
+<h4>Outputs</h4>
+<ul>
+  <li>Returns a fitted <code>xgb.Booster</code> model.</li>
+  <li>Errors if the <code>xgboost</code> package is not installed.</li>
+</ul>
+</div>
+
+<div class="card" id="predict_ml_xgboost">
+<h3><code>predict_ml_xgboost()</code></h3>
+
+<h4>Purpose</h4>
+<p>Predict from a fitted XGBoost model using <code>xgboost::predict()</code> on an <code>xgb.DMatrix</code>. Requires the <code>xgboost</code> package.</p>
+
+<h4>Example call</h4>
+<pre><code>mu_new &lt;- predict_ml_xgboost(ml_fit, Xw_new)</code></pre>
+
+<h4>Inputs</h4>
+<ul>
+  <li><code>ml_fit</code> — fitted object returned by <code>fit_ml_xgboost()</code>.</li>
+  <li><code>Xnew</code> — new design matrix (coerced via <code>.as_matrix()</code>).</li>
+</ul>
+
+<h4>Outputs</h4>
+<ul>
+  <li>Returns a numeric prediction vector.</li>
+</ul>
+</div>
+
+
+</div></main>
+<footer><div class="wrap">Generated documentation</div></footer>
+</body></html>

@@ -8,26 +8,61 @@
 <body>
 <header><div class="wrap nav">
 <a href="index.html">Home</a>
+<a href="vignette.html">Vignette</a>
 <a href="fit-predict.html">Fit & Predict</a>
 <a href="tuning.html">Tuning</a>
 <a href="vecchia.html">Vecchia</a>
 <a href="utilities.html">Utilities</a>
-<a href="ml-helpers.html">ML helpers</a>
+<a href="ml-backends.html">ML Backends</a>
 <a href="concepts.html">Concepts</a>
 </div></header>
 <main><div class="wrap">
 
-<h1>Spatial EM documentation</h1>
-<p>Multi-page documentation for the Spatial EM framework.</p>
-<ul>
-<li><a href="fit-predict.html">Fit & Predict</a></li>
-<li><a href="tuning.html">Tuning & CV</a></li>
-<li><a href="vecchia.html">Vecchia & Whitening</a></li>
-<li><a href="utilities.html">Utilities</a></li>
-<li><a href="ml-helpers.html">ML helpers</a></li>
-<li><a href="concepts.html">Concepts</a></li>
-</ul>
+<h1>Spatial EM</h1>
+<p>
+  Documentation site for the <strong>Spatial EM</strong> framework: a latent-Gaussian EM approach that combines
+  flexible machine-learning mean models with spatial dependence (via Vecchia approximations and whitening).
+</p>
+
+<div class="card public">
+  <h2 style="margin-top:0">Start here</h2>
+  <p class="muted">A guided walkthrough is the fastest way to understand the workflow end-to-end.</p>
+  <p><a href="vignette.html"><strong>Open the vignette →</strong></a></p>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Quick mental map</h2>
+  <ul>
+    <li><strong>Fit</strong> a model with <code>fit_spatial_em()</code> (choose <code>family</code> and <code>ml_model</code>).</li>
+    <li><strong>Predict</strong> with <code>predict()</code> on <code>"response"</code>, <code>"link"</code>, or <code>"latent_w"</code> scales.</li>
+    <li><strong>Tune</strong> spatial + ML hyperparameters with <code>tune_spatial_em()</code>, then parse the best config with <code>extract_best_config()</code>.</li>
+    <li><strong>Under the hood</strong>: Vecchia structure, whitening, and reconstruction utilities.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Docs</h2>
+  <ul>
+    <li><a href="vignette.html">Vignette (walkthrough)</a></li>
+    <li><a href="fit-predict.html">Fit &amp; Predict</a></li>
+    <li><a href="tuning.html">Tuning &amp; CV</a></li>
+    <li><a href="vecchia.html">Vecchia &amp; Whitening</a></li>
+    <li><a href="utilities.html">Utilities</a></li>
+    <li><a href="ml-backends.html">ML backends</a></li>
+    <li><a href="concepts.html">Concepts</a></li>
+  </ul>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Typical workflow</h2>
+  <ol>
+    <li>Start with the <a href="vignette.html">vignette</a> to see a complete example.</li>
+    <li>Use <a href="fit-predict.html">Fit &amp; Predict</a> as your API reference while coding.</li>
+    <li>When performance matters, move to <a href="tuning.html">Tuning</a> and then refit on all data.</li>
+    <li>When debugging or extending, consult <a href="vecchia.html">Vecchia</a> and <a href="utilities.html">Utilities</a>.</li>
+  </ol>
+</div>
 
 </div></main>
-<footer><div class="wrap">Generated 2025-12-25</div></footer>
+<footer><div class="wrap">Generated 2026-01-26</div></footer>
 </body></html>

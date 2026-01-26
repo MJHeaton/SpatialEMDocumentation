@@ -8,26 +8,35 @@
 <body>
 <header><div class="wrap nav">
 <a href="index.html">Home</a>
+<a href="vignette.html">Vignette</a>
 <a href="fit-predict.html">Fit & Predict</a>
 <a href="tuning.html">Tuning</a>
 <a href="vecchia.html">Vecchia</a>
 <a href="utilities.html">Utilities</a>
-<a href="ml-helpers.html">ML helpers</a>
+<a href="ml-backend.html">ML Backends</a>
 <a href="concepts.html">Concepts</a>
 </div></header>
 <main><div class="wrap">
 
 <h1>Tuning & CV</h1>
 
+
+
 <div class="card">
   <h2 style="margin-top:0">Table of contents</h2>
   <ul>
-    <li><a href="#tune_spatial_em"><code>tune_spatial_em()</code></a></li>
-    <li><a href="#cv_spatial_em_probit_ranger"><code>cv_spatial_em_probit_ranger()</code></a></li>
-    <li><a href="#extract_best_config"><code>extract_best_config()</code></a></li>
+    <li><strong>Public wrappers</strong></li>
+    <ul>
+      <li><a href="#tune_spatial_em"><code>tune_spatial_em()</code></a></li>
+      <li><a href="#extract_best_config"><code>extract_best_config()</code></a></li>
+    </ul>
+    <li><strong>Backend</strong></li>
+    <ul>
+      <li><a href="#cv_spatial_em_probit"><code>cv_spatial_em_probit()</code></a></li>
+    </ul>
   </ul>
 </div>
-
+<div class="card public"><h2 style="margin-top:0">Public wrappers</h2><p class="muted">Stable user-facing API: use these functions to tune and extract best config.</p></div>
 <div class="card" id="tune_spatial_em">
 <h3><code>tune_spatial_em()</code></h3>
 <h4>Purpose</h4>
@@ -35,7 +44,7 @@
   High-level tuning wrapper for Spatial EM models. This function provides a stable,
   user-facing interface for cross-validation and hyperparameter tuning, dispatching to a
   family- and ML-model-specific CV implementation (currently
-  <code>cv_spatial_em_probit_ranger()</code>).
+  <code>cv_spatial_em_probit()</code>).
 </p>
 
 <h4>Example call</h4>
@@ -78,6 +87,10 @@ cv_res &lt;- tune_spatial_em(
 
 <h4>Inputs</h4>
 <ul>
+  <li><code>ml_model</code> — Mean-model backend. Supported: <code>"ranger"</code>, <code>"lm"</code>, <code>"xgboost"</code>.</li>
+
+  <li><code>ml_grid</code> — Grid of ML hyperparameters to evaluate (can be <code>NULL</code> to use backend defaults).</li>
+
   <li><code>formula</code> — Model formula specifying the response and covariates.</li>
 
   <li><code>data</code> — Data frame containing response, covariates, and coordinate columns.</li>
@@ -87,7 +100,7 @@ cv_res &lt;- tune_spatial_em(
 
   <li><code>family</code> — Observation family. Currently only <code>"probit"</code> is supported.</li>
 
-  <li><code>ml_model</code> — Mean-model choice. Currently only <code>"ranger"</code> is supported.</li>
+  <li><code>ml_model</code> — Mean-model choice. Supported backends: <code>"ranger"</code>, <code>"lm"</code>, <code>"xgboost"</code>.</li>
 
   <li><code>spatial_grid</code> — Grid of spatial correlation parameters to evaluate. Must be provided.
       This is validated/normalized by the backend CV routine.</li>
@@ -130,7 +143,7 @@ cv_res &lt;- tune_spatial_em(
 <ul>
   <li>
     Returns the results data frame produced by the backend CV function (currently
-    <code>cv_spatial_em_probit_ranger()</code>), sorted by <code>brier_mean</code> (lower is better).
+    <code>cv_spatial_em_probit()</code>), sorted by <code>brier_mean</code> (lower is better).
   </li>
   <li>
     The returned data frame includes (at minimum) the columns:
@@ -144,21 +157,106 @@ cv_res &lt;- tune_spatial_em(
 </ul>
 </div>
 
-<div class="card" id="cv_spatial_em_probit_ranger">
-<h3><code>cv_spatial_em_probit_ranger()</code></h3>
+<div class="card" id="extract_best_config">
+<h3><code>extract_best_config()</code></h3>
+
 <h4>Purpose</h4>
 <p>
-  Run cross-validation over a joint hyperparameter grid for a probit Spatial EM model with a
-  ranger mean model. This function:
-  (1) validates the spatial grid and expands the ranger grid into runnable configs,
-  (2) builds CV folds <em>once</em> (fixed across all configurations),
-  (3) evaluates every combination of spatial parameters and ranger hyperparameters across K folds,
-  (4) computes cutoff-free metrics (Brier, log-loss, AUC) plus timing,
-  and (5) returns a results table sorted by mean Brier score.
+  Extract a ready-to-use “best configuration” from a Spatial EM tuning / CV results data frame.
+  Rather than returning the full best row, this function parses the selected best row into:
+  (1) <code>correlation_params</code> (range/nugget/smoothness),
+  (2) <code>max_neighbors</code>, and
+  (3) <code>ml_args</code> (remaining ML hyperparameter columns).
 </p>
 
 <h4>Example call</h4>
-<pre><code># Spatial covariance grid (validated by validate_spatial_grid())
+<pre><code># CV results from tune_spatial_em() / cv_spatial_em_probit()
+res &lt;- tune_spatial_em(...)
+
+# 1) Best config for the default primary metric columns (all *_mean metrics)
+best_all &lt;- extract_best_config(res)
+# returns a named list, e.g. best_all$brier_mean, best_all$auc_mean, ...
+
+# 2) Best config for a single metric (flexible matching)
+best_brier &lt;- extract_best_config(res, metric = "brier")
+best_auc   &lt;- extract_best_config(res, metric = "auc_mean")
+best_acc   &lt;- extract_best_config(res, metric = "accuracy")
+
+# Using the extracted config to refit on the full data
+fit &lt;- fit_spatial_em(
+  formula            = y ~ x1 + x2 + x3,
+  data               = dat,
+  coords             = c("lon","lat"),
+  family             = "probit",
+  ml_model           = "xgboost",
+  correlation_params = best_brier$correlation_params,
+  max_neighbors      = best_brier$max_neighbors,
+  ml_args            = best_brier$ml_args
+)</code></pre>
+
+<h4>Inputs</h4>
+<ul>
+  <li><code>tune_output</code> — A non-empty data frame of tuning results (e.g., returned by
+      <code>tune_spatial_em()</code> or <code>cv_spatial_em_probit()</code>). Metric columns are detected as
+      columns ending in <code>_mean</code>, excluding timing columns.</li>
+
+  <li><code>metric</code> — Optional metric selector. If <code>NULL</code> (default), the function returns the best
+      extracted configuration for <em>each</em> available metric column (each <code>*_mean</code> column, excluding times).
+      If provided, it must resolve to exactly one metric column using:
+      <ul>
+        <li>exact match (case-sensitive or case-insensitive),</li>
+        <li>automatic <code>_mean</code> suffixing (e.g., <code>"brier"</code> → <code>"brier_mean"</code>), or</li>
+        <li>a unique substring match (case-insensitive).</li>
+      </ul>
+      Ambiguous or missing matches throw an error.
+  </li>
+</ul>
+
+<h4>Outputs</h4>
+<ul>
+  <li>
+    If <code>metric</code> is specified: returns a list with elements:
+    <ul>
+      <li><code>correlation_params</code> — a list containing any of <code>range</code>, <code>nugget</code>, <code>smoothness</code>
+          that are present in the tuning output row</li>
+      <li><code>max_neighbors</code> — integer value from <code>max_neighbors</code> (or <code>k</code> if used), else <code>NA</code></li>
+      <li><code>ml_args</code> — a named list of remaining ML hyperparameter columns (or <code>NULL</code> if none / all NA)</li>
+    </ul>
+  </li>
+
+  <li>
+    If <code>metric = NULL</code>: returns a named list of the above lists, one per metric column (e.g.,
+    <code>brier_mean</code>, <code>logloss_mean</code>, <code>auc_mean</code>, <code>acc_mean</code> if present).
+  </li>
+
+  <li class="muted">
+    Notes:
+    <ul>
+      <li>“Higher is better” is assumed for metric names containing <code>auc</code>, <code>acc</code>, or <code>accuracy</code>
+          (case-insensitive); all other metrics are minimized.</li>
+      <li>Non-finite metric values (<code>NA</code>, <code>Inf</code>) are ignored when selecting the best row.</li>
+      <li>Metric and timing columns (<code>*_mean</code>, <code>fit_time_mean</code>, <code>pred_time_mean</code>) are not included
+          in <code>ml_args</code>.</li>
+    </ul>
+  </li>
+</ul>
+</div>
+
+<div class="card backend"><h2 style="margin-top:0">Backend Functions</h2><p class="muted">Model-specific implementations used by the public wrappers</p></div>
+<div class="card" id="cv_spatial_em_probit">
+<h3><code>cv_spatial_em_probit()</code></h3>
+
+<h4>Purpose</h4>
+<p>
+  Perform cross-validation for a probit Spatial EM model over a grid of spatial
+  correlation parameters and (optionally) machine-learning mean-model hyperparameters.
+  This function evaluates every spatial × ML configuration using fixed CV folds,
+  computes cutoff-free performance metrics, and returns a results table sorted by
+  mean Brier score.
+</p>
+
+<h4>Example call</h4>
+<pre><code># Spatial correlation tuning grid
 spatial_grid &lt;- expand.grid(
   range         = c(0.1, 0.25, 0.5),
   nugget        = c(0, 1e-6),
@@ -166,18 +264,19 @@ spatial_grid &lt;- expand.grid(
   max_neighbors = c(20, 30)
 )
 
-# Ranger hyperparameter grid (expanded by expand_ranger_grid())
-ranger_grid &lt;- expand.grid(
-  num.trees = c(300, 500),
-  mtry      = c(2, 4)
+# ML hyperparameter grid (NULL = backend defaults)
+ml_grid &lt;- expand.grid(
+  max_depth = c(3, 5),
+  eta       = c(0.05, 0.1)
 )
 
-res &lt;- cv_spatial_em_probit_ranger(
+cv_res &lt;- cv_spatial_em_probit(
   formula       = y ~ x1 + x2 + x3,
   data          = dat,
   coords        = c("lon","lat"),
   spatial_grid  = spatial_grid,
-  ranger_grid   = ranger_grid,
+  ml_model      = "xgboost",
+  ml_grid       = ml_grid,
   cv_scheme     = "mixed",
   K             = 10,
   sprinkle_frac = 0.10,
@@ -187,158 +286,100 @@ res &lt;- cv_spatial_em_probit_ranger(
   damping       = 1.0,
   ordering      = "maxmin",
   num_cores     = 4,
-  num_cores_vecchia = 2,
+  num_cores_vecchia = 1,
   verbose       = TRUE
 )
 
-# Best configuration (sorted by brier_mean)
-best &lt;- res[1, ]</code></pre>
+# Best configuration (lowest Brier score)
+best &lt;- cv_res[1, ]</code></pre>
 
 <h4>Inputs</h4>
 <ul>
-  <li><code>formula</code> — Model formula specifying binary response and covariates.</li>
+  <li><code>formula</code> — Model formula specifying a binary response and covariates.</li>
 
   <li><code>data</code> — Data frame containing response, covariates, and coordinate columns.</li>
 
-  <li><code>coords</code> — Coordinate specification passed to <code>get_locs_matrix()</code>
-      (typically a character vector of column names).</li>
+  <li><code>coords</code> — Coordinate specification used to extract spatial locations from <code>data</code>.</li>
 
-  <li><code>spatial_grid</code> — Data frame/grid of spatial correlation parameters. This is first passed through
-      <code>validate_spatial_grid()</code> and must (after validation) supply:
-      <ul>
-        <li><code>range</code>, <code>nugget</code>, <code>smoothness</code>, and <code>max_neighbors</code></li>
-      </ul>
+  <li><code>spatial_grid</code> — Data frame defining spatial correlation configurations.
+      Must include columns <code>range</code>, <code>nugget</code>, <code>smoothness</code>,
+      and <code>max_neighbors</code>. This grid is validated by
+      <code>validate_spatial_grid()</code>.
   </li>
 
-  <li><code>ranger_grid</code> — Data frame/grid of ranger hyperparameters. Each row is one configuration; rows are
-      converted into runnable argument lists via <code>expand_ranger_grid()</code>.</li>
+  <li><code>ml_model</code> — Mean-model backend used inside each fit.
+      One of <code>"ranger"</code>, <code>"lm"</code>, or <code>"xgboost"</code>.
+  </li>
+
+  <li><code>ml_grid</code> — Optional data frame of ML hyperparameters.
+      Each row corresponds to one ML configuration. If <code>NULL</code>, a single
+      configuration using backend defaults is evaluated.
+  </li>
 
   <li><code>cv_scheme</code> — Cross-validation sampling scheme:
     <ul>
-      <li><code>"random"</code> — random pointwise folds via <code>make_folds_random()</code></li>
-      <li><code>"block"</code> — spatial block folds implemented as mixed with <code>sprinkle_frac = 0</code></li>
-      <li><code>"mixed"</code> — spatial block folds plus a random “sprinkle” of training points (short-distance prediction)</li>
+      <li><code>"random"</code> — random pointwise folds</li>
+      <li><code>"block"</code> — spatial block CV (implemented as mixed with <code>sprinkle_frac = 0</code>)</li>
+      <li><code>"mixed"</code> — spatial block CV with a random “sprinkle” of training points
+          to allow short-distance prediction</li>
     </ul>
-    Block/mixed folds are built with <code>make_folds_mixed(..., block_method = "kmeans")</code>.
   </li>
 
-  <li><code>K</code> — Number of folds.</li>
+  <li><code>K</code> — Number of CV folds.</li>
 
-  <li><code>sprinkle_frac</code> — Fraction of randomly sampled points added to training folds when
-      <code>cv_scheme = "mixed"</code>. Ignored for <code>"random"</code>. Effectively 0 for <code>"block"</code>.</li>
+  <li><code>sprinkle_frac</code> — Fraction of randomly sampled points added to training folds
+      when <code>cv_scheme = "mixed"</code>.</li>
 
-  <li><code>seed</code> — Random seed for fold creation (folds are built once and reused across all configurations).</li>
+  <li><code>seed</code> — Random seed used for fold construction. Folds are built once and reused
+      across all configurations.</li>
 
-  <li><code>em_max_iter</code>, <code>em_tol</code>, <code>damping</code> — EM controls passed into
-      <code>fit_spatial_em_probit_ranger()</code> for each fold fit.</li>
+  <li><code>em_max_iter</code>, <code>em_tol</code>, <code>damping</code> — EM algorithm controls
+      passed to <code>fit_spatial_em()</code> for each fold fit.</li>
 
-  <li><code>ordering</code> — Vecchia ordering strategy (<code>"maxmin"</code> or <code>"nn"</code>), passed to the fitter.</li>
+  <li><code>ordering</code> — Vecchia ordering strategy (<code>"maxmin"</code>, <code>"coordinate"</code>,
+      or <code>"random"</code>).</li>
 
-  <li><code>num_cores</code> — Outer parallelism over hyperparameter configurations. If <code>num_cores &gt; 1</code>,
-      CV configs are evaluated via <code>future.apply::future_lapply()</code> using a multisession plan.</li>
+  <li><code>num_cores</code> — Number of CPU cores used for outer parallelism over configurations.
+      If greater than 1, evaluation is parallelized using <code>future.apply</code>.
+  </li>
 
-  <li><code>num_cores_vecchia</code> — Inner parallelism for Vecchia structure building inside each fit.
-      To avoid nested parallelism, the function sets Vecchia cores to 1 whenever <code>num_cores &gt; 1</code>
-      (i.e., when outer parallelism is active).</li>
+  <li><code>num_cores_vecchia</code> — Number of CPU cores used when building the Vecchia structure
+      inside each fit. To avoid nested parallelism, this is forced to 1 whenever
+      <code>num_cores &gt; 1</code>.
+  </li>
 
-  <li><code>verbose</code> — If <code>TRUE</code>, prints a summary line about scheme, K, number of configurations, and cores.</li>
+  <li><code>verbose</code> — If <code>TRUE</code>, prints progress information and a summary of the CV run.</li>
 </ul>
 
 <h4>Outputs</h4>
 <ul>
   <li>
-    Returns a data frame with one row per (spatial × ranger) configuration, sorted by
+    Returns a data frame with one row per (spatial × ML) configuration, sorted by
     <code>brier_mean</code> (ascending).
   </li>
+
   <li>
-    The output includes:
+    Columns include:
     <ul>
-      <li>Spatial parameters:
-        <code>spatial_row</code>, <code>range</code>, <code>nugget</code>, <code>smoothness</code>, <code>max_neighbors</code>
-      </li>
-      <li>Mean performance (across folds):
-        <code>brier_mean</code>, <code>logloss_mean</code>, <code>auc_mean</code>
-      </li>
-      <li>Mean timing (across folds):
-        <code>fit_time_mean</code>, <code>pred_time_mean</code>
-      </li>
-      <li>Ranger hyperparameter columns copied from the corresponding row of <code>ranger_grid</code></li>
+      <li>spatial parameters: <code>range</code>, <code>nugget</code>,
+          <code>smoothness</code>, <code>max_neighbors</code></li>
+      <li>ML information: <code>ml_model</code> and hyperparameter columns from <code>ml_grid</code></li>
+      <li>mean performance metrics: <code>brier_mean</code>, <code>logloss_mean</code>, <code>auc_mean</code></li>
+      <li>mean timing metrics: <code>fit_time_mean</code>, <code>pred_time_mean</code></li>
     </ul>
   </li>
+
   <li class="muted">
-    Notes: Metrics are cutoff-free. Probabilities are produced by <code>predict_spatial_em_probit_ranger(..., type = "response")</code>,
-    then scored with <code>brier_score()</code>, <code>log_loss()</code>, and <code>auc_rank()</code>.
-  </li>
-</ul>
-</div>
-
-<div class="card" id="extract_best_config">
-<h3><code>extract_best_config()</code></h3>
-<h4>Purpose</h4>
-<p>
-  Extract the “best” hyperparameter configuration(s) from a Spatial EM tuning / CV results
-  data frame. This function identifies metric columns automatically, determines whether
-  higher or lower values are better, and returns the row(s) corresponding to optimal
-  performance.
-</p>
-
-<h4>Example call</h4>
-<pre><code># Full CV results from tune_spatial_em()
-cv_res &lt;- tune_spatial_em(...)
-
-# 1) Get best configuration for each available metric
-best_all &lt;- extract_best_config(cv_res)
-# returns a named list, e.g.:
-# $brier_mean
-# $logloss_mean
-# $auc_mean
-
-# 2) Get best configuration for a specific metric (flexible matching)
-best_brier &lt;- extract_best_config(cv_res, metric = "brier")
-best_auc    &lt;- extract_best_config(cv_res, metric = "auc_mean")
-best_logloss &lt;- extract_best_config(cv_res, metric = "logloss")</code></pre>
-
-<h4>Inputs</h4>
-<ul>
-  <li><code>tune_output</code> — A non-empty data frame returned by
-      <code>tune_spatial_em()</code>.
-      Must contain metric columns ending in <code>_mean</code>.
-  </li>
-
-  <li><code>metric</code> — Optional metric selector. If <code>NULL</code> (default),
-      the function returns the best configuration for <em>each</em> available metric.
-      If provided, it must identify a single metric column via:
-      <ul>
-        <li>exact match (case-sensitive or case-insensitive), or</li>
-        <li>unique substring match (e.g., <code>"auc"</code> → <code>"auc_mean"</code>).</li>
-      </ul>
-      If the match is ambiguous or no match is found, an error is thrown.
-  </li>
-</ul>
-
-<h4>Outputs</h4>
-<ul>
-  <li>
-    If <code>metric = NULL</code>:
+    Notes:
     <ul>
-      <li>Returns a named list of data frames.</li>
-      <li>Each element corresponds to one metric (e.g., <code>brier_mean</code>,
-          <code>logloss_mean</code>, <code>auc_mean</code>) and contains a single row:
-          the best-performing configuration under that metric.
-      </li>
-    </ul>
-  </li>
-
-  <li>
-    If <code>metric</code> is specified:
-    <ul>
-      <li>Returns a single-row data frame corresponding to the best configuration
-          under the chosen metric.</li>
+      <li>All metrics are cutoff-free and computed on response-scale probabilities.</li>
+      <li>Performance is evaluated using <code>brier_score()</code>,
+          <code>log_loss()</code>, and <code>auc_rank()</code>.</li>
+      <li>Sorting is always done by <code>brier_mean</code> (lower is better).</li>
     </ul>
   </li>
 </ul>
 </div>
-
 </div></main>
 <footer><div class="wrap">Generated 2025-12-25</div></footer>
 </body></html>

@@ -8,11 +8,12 @@
 <body>
 <header><div class="wrap nav">
 <a href="index.html">Home</a>
+<a href="vignette.html">Vignette</a>
 <a href="fit-predict.html">Fit & Predict</a>
 <a href="tuning.html">Tuning</a>
 <a href="vecchia.html">Vecchia</a>
 <a href="utilities.html">Utilities</a>
-<a href="ml-helpers.html">ML helpers</a>
+<a href="ml-backend.html">ML Backends</a>
 <a href="concepts.html">Concepts</a>
 </div></header>
 <main><div class="wrap">
@@ -20,223 +21,247 @@
 <h1>Fit & Predict</h1>
 
 
-<div class="card"><h2 style="margin-top:0">Public wrappers</h2><p class="muted">Stable user-facing API: use these functions to fit and predict.</p></div>
 <div class="card">
-<h2 style="margin-top:0">Table of contents</h2>
-<ul>
-<li><a href="#fit_spatial_em-"><code>fit_spatial_em()</code></a></li>
-<li><a href="#predict.spatial_em-"><code>predict.spatial_em()</code></a></li>
-<li><a href="#fit_spatial_em_probit_ranger-"><code>fit_spatial_em_probit_ranger()</code></a></li>
-<li><a href="#predict_spatial_em_probit_ranger-"><code>predict_spatial_em_probit_ranger()</code></a></li>
-</ul>
+  <h2 style="margin-top:0">Table of contents</h2>
+  <ul>
+    <li><strong>Public wrappers</strong></li>
+    <ul>
+      <li><a href="#fit_spatial_em"><code>fit_spatial_em()</code></a></li>
+      <li><a href="#predict.spatial_em"><code>predict.spatial_em()</code></a></li>
+    </ul>
+    <li><strong>Backend</strong></li>
+    <ul>
+      <li><a href="#fit_spatial_em_probit"><code>fit_spatial_em_probit()</code></a></li>
+      <li><a href="#predict_spatial_em_probit"><code>predict_spatial_em_probit()</code></a></li>
+    </ul>
+  </ul>
 </div>
-
-<div class="card" id="fit_spatial_em-">
+<div class="card public"><h2 style="margin-top:0">Public wrappers</h2><p class="muted">Stable user-facing API: use these functions to fit and predict.</p></div>
+<div class="card" id="fit_spatial_em">
 <h3><code>fit_spatial_em()</code></h3>
 <h4>Purpose</h4>
 <p>
-  Fit a Spatial EM model using a stable, user-facing wrapper that dispatches to a
-  family- and ML-model-specific fitter (e.g., <code>fit_spatial_em_probit_ranger()</code>).
-  This keeps your top-level API consistent even as you add new families/models.
+  Public entry point for fitting Spatial EM models. This is a thin wrapper that:
+  (1) validates <code>family</code> and <code>ml_model</code>,
+  (2) dispatches to a family-specific fitter (currently <code>fit_spatial_em_probit()</code>),
+  and (3) adds the generic class <code>"spatial_em"</code> to the returned fit object for S3 dispatch
+  (e.g., <code>predict()</code>).
 </p>
 
 <h4>Example call</h4>
-<pre><code># Example: probit + ranger backend
-fit &lt;- fit_spatial_em(
-  formula  = y ~ x1 + x2 + x3,
-  data     = dat,
-  coords   = c("lon", "lat"),   # or a matrix/data.frame of coordinates, depending on backend
-  family   = "probit",
-  ml_model = "ranger",
-  ... # Additional arguments forwarded directly to the specific fitter 
-)</code></pre>
-
-<h4>Inputs</h4>
-<ul>
-  <li><code>formula</code> — An R formula specifying the response and covariates (e.g., <code>y ~ x1 + x2</code>).</li>
-  <li><code>data</code> — Data frame containing the response/covariate columns referenced in <code>formula</code>.</li>
-  <li><code>coords</code> — Spatial coordinates for each row in <code>data</code>. Typically either:
-    <ul>
-      <li>a character vector of coordinate column names (e.g., <code>c("lon","lat")</code>), or</li>
-      <li>a numeric vector indicating the column numbers of coordinates in <code>data</code> (e.g., <code>c(1,2)</code>), or</li>
-      <li>a numeric matrix/data.frame with one row per observation.</li>
-    </ul>
-  </li>
-  <li><code>family</code> — Observation family. Currently supports <code>"probit"</code> (more planned later).</li>
-  <li><code>ml_model</code> — Mean-model choice. Currently supports <code>"ranger"</code> (more planned later).</li>
-  <li><code>...</code> — Additional arguments forwarded directly to the specific fitter
-    <code>fit_spatial_em_{family}_{ml_model}()</code> (e.g., spatial covariance parameters, EM controls, ML hyperparameters).</li>
-</ul>
-
-<h4>Outputs</h4>
-<ul>
-  <li>
-    A fitted model object returned by the model-specific fitter, with class augmented to include
-    <code>"spatial_em"</code> on top:
-    <code>class(fit) = c("spatial_em", &lt;model-specific-class&gt;)</code>.
-  </li>
-  <li>
-    The exact contents (stored Vecchia structure, trained ML model, training metadata, etc.)
-    are determined by the backend fitter.
-  </li>
-</ul>
-</div>
-
-<div class="card" id="predict.spatial_em-">
-<h3><code>predict.spatial_em()</code></h3>
-<h4>Purpose</h4>
-<p>
-  S3 predict method for fitted Spatial EM objects. This provides a single,
-  stable entry point for prediction that dispatches to the model-specific
-  prediction function (e.g., <code>predict_spatial_em_probit_ranger()</code>),
-  while keeping a consistent interface for users.
-</p>
-
-<h4>Example call</h4>
-<pre><code># After fitting
-fit &lt;- fit_spatial_em(
+<pre><code> fit &lt;- fit_spatial_em(
   formula  = y ~ x1 + x2 + x3,
   data     = dat,
   coords   = c("lon","lat"),
   family   = "probit",
-  ml_model = "ranger",
-  ...
-)
+  ml_model = "xgboost",
 
-# 1) Default: probabilities on the response scale (for probit)
-p_hat &lt;- predict(fit, newdata = dat_new, type = "response")
-
-# 2) Latent spatial linear predictor / link scale (backend-dependent meaning)
-z_hat &lt;- predict(fit, newdata = dat_new, type = "link")
-
-# 3) Internal whitened latent scale (mostly for debugging / research)
-z_w_hat &lt;- predict(fit, newdata = dat_new, type = "latent_w")</code></pre>
-
-<h4>Inputs</h4>
-<ul>
-  <li><code>object</code> — A fitted Spatial EM model object (returned by <code>fit_spatial_em()</code> or a model-specific fitter).</li>
-  <li><code>newdata</code> — Data frame (or equivalent) containing covariates and coordinates for prediction. Must include:
-    <ul>
-      <li>all covariate columns required by the fitted mean model (as implied by the original <code>formula</code>), and</li>
-      <li>the coordinate columns (same names/format used during fitting).</li>
-    </ul>
-  </li>
-  <li><code>type</code> — Prediction scale to return. Typical options:
-    <ul>
-      <li><code>"response"</code> — response-scale predictions (e.g., probabilities for binary families)</li>
-      <li><code>"link"</code> — latent/link-scale predictions (e.g., probit latent <code>&eta;</code> before applying Φ)</li>
-      <li><code>"latent_w"</code> — internal whitened latent scale (mainly for diagnostics)</li>
-    </ul>
-    The exact supported values and meanings depend on the backend model.
-  </li>
-  <li><code>...</code> — Additional arguments forwarded to the backend predict implementation.</li>
-</ul>
-
-<h4>Outputs</h4>
-<ul>
-  <li>
-    A numeric vector (or backend-defined structure) of predictions aligned with the rows of <code>newdata</code>.
-  </li>
-  <li>
-    Returned values depend on <code>type</code>:
-    <ul>
-      <li><code>"response"</code>: typically probabilities for binary outcomes</li>
-      <li><code>"link"</code>: latent linear predictor / latent field scale</li>
-      <li><code>"latent_w"</code>: whitened latent scale used internally</li>
-    </ul>
-  </li>
-</ul>
-</div>
-
-
-<div class="card"><h2 style="margin-top:0">Backend: probit + ranger</h2><p class="muted">Model-specific implementations used by the public wrappers.</p></div>
-<div class="card" id="fit_spatial_em_probit_ranger-">
-<h3><code>fit_spatial_em_probit_ranger()</code></h3>
-<h4>Purpose</h4>
-<p>
-  Fit a binary (<code>0/1</code>) Spatial EM probit model where the mean structure is learned with
-  <code>ranger</code> on <em>whitened</em> covariates. The function:
-  (1) parses <code>formula</code> into <code>Y</code> and <code>X</code>,
-  (2) builds a Vecchia structure from spatial coordinates,
-  (3) whitens <code>X</code> to <code>Xw</code>,
-  (4) runs an EM algorithm on the whitened latent field <code>Zw</code> with a ranger M-step,
-  and (5) reconstructs the correlated latent field <code>Z_hat</code> at the end.
-</p>
-
-<h4>Example call</h4>
-<pre><code># correlation_params is passed to build_vecchia_structure() (your Matérn/GP params)
-# The exact contents/format should match what build_vecchia_structure() expects.
-cor_pars &lt;- list(range = 0.25, nugget = 1e-6, smoothness = 1.5)
-
-fit &lt;- fit_spatial_em_probit_ranger(
-  formula            = y ~ x1 + x2 + x3,
-  data               = dat,
-  coords             = c("lon","lat"),
-  correlation_params = cor_pars,
+  # forwarded to fit_spatial_em_{family}(...):
+  correlation_params = list(range = 0.25, nugget = 1e-6, smoothness = 1.5),
   max_neighbors      = 30,
   ordering           = "maxmin",
-  num_cores_vecchia  = 4,
   em_max_iter        = 30,
   em_tol             = 1e-3,
   damping            = 0.7,
-  ranger_args        = list(num.trees = 500, mtry = 3),
+  ml_args            = list(max_depth = 4, eta = 0.1),
+  init_method        = "ranger",
   verbose            = TRUE
 )</code></pre>
 
 <h4>Inputs</h4>
 <ul>
-  <li><code>formula</code> — Model formula. Response must be binary (0/1) or a 2-level factor. Covariates are expanded via <code>model.matrix()</code> (includes an intercept by default).</li>
+  <li><code>formula</code> — Model formula specifying the response and covariates.</li>
 
-  <li><code>data</code> — Data frame containing response + covariates + coordinate columns.</li>
+  <li><code>data</code> — Data frame containing response, covariates, and coordinate columns.</li>
 
-  <li><code>coords</code> — Coordinates specification passed to <code>get_locs_matrix(data, coords)</code>.
-    Typically a character vector of coordinate column names (e.g., <code>c("x","y")</code> or <code>c("lon","lat")</code>).
+  <li><code>coords</code> — Coordinate specification used to extract locations from <code>data</code>
+      (typically a character vector of column names like <code>c("x","y")</code>).</li>
+
+  <li><code>family</code> — Observation family. Currently supports:
+    <ul>
+      <li><code>"probit"</code></li>
+    </ul>
   </li>
 
-  <li><code>correlation_params</code> — Spatial correlation parameter object passed to <code>build_vecchia_structure()</code>
-    (e.g., Matérn parameters). Must match whatever format your Vecchia builder expects.
+  <li><code>ml_model</code> — Mean-model backend used inside the family-specific fitter. Currently supports:
+    <ul>
+      <li><code>"ranger"</code></li>
+      <li><code>"lm"</code></li>
+      <li><code>"xgboost"</code></li>
+    </ul>
   </li>
 
-  <li><code>max_neighbors</code> — Maximum number of neighbors per location in the Vecchia approximation (controls accuracy vs speed/memory).</li>
-
-  <li><code>ordering</code> — Vecchia ordering strategy. One of <code>"maxmin"</code> or <code>"nn"</code>. Converted via <code>match.arg()</code>.</li>
-
-  <li><code>num_cores_vecchia</code> — Number of CPU cores used inside <code>build_vecchia_structure()</code> (only affects the Vecchia construction step).</li>
-
-  <li><code>em_max_iter</code> — Maximum number of EM iterations.</li>
-
-  <li><code>em_tol</code> — Convergence tolerance. EM stops when <code>max(abs(Zw_new - Zw)) &lt; em_tol</code>.</li>
-
-  <li><code>damping</code> — Damping factor applied to the E-step update:
-    <code>Zw &lt;- (1 - damping) * Zw + damping * Zw_new</code> when <code>damping &lt; 1</code>.
-    Lower values can stabilize EM but slow convergence.
-  </li>
-
-  <li><code>ranger_args</code> — Named list of extra arguments merged into the ranger regression call used in the M-step.
-    Examples: <code>num.trees</code>, <code>mtry</code>, <code>min.node.size</code>, etc.
-  </li>
-
-  <li><code>verbose</code> — If <code>TRUE</code>, prints progress messages and EM convergence diagnostics.</li>
+  <li><code>...</code> — Additional arguments forwarded to the family-specific fit function
+      (currently <code>fit_spatial_em_probit()</code>). This is where you supply the spatial correlation settings,
+      EM controls, ML hyperparameters (<code>ml_args</code>), initialization choices, etc.</li>
 </ul>
 
 <h4>Outputs</h4>
 <ul>
   <li>
-    Returns a list with class <code>"spatial_em_probit_ranger"</code>.
+    Returns a fitted model object produced by the family-specific fitter (currently class
+    <code>"spatial_em_probit"</code>), with the generic class <code>"spatial_em"</code> prepended for S3 dispatch.
+    In other words:
+    <code>class(fit) = c("spatial_em", "spatial_em_probit")</code> (plus any additional classes the backend may include).
   </li>
   <li>
-    Key components stored in the returned object (all in original data order unless noted):
+    The returned object contains everything needed for prediction and inspection, including:
+    <code>terms</code>, <code>vecchia</code>, <code>correlation_params</code>, the trained ML mean-model fit,
+    and latent-field state (<code>Zw</code>, <code>Z_hat</code>) (exact contents depend on the family backend).
+  </li>
+</ul>
+</div>
+
+<div class="card" id="predict.spatial_em">
+<h3><code>predict.spatial_em()</code></h3>
+<h4>Purpose</h4>
+<p>
+  Public S3 prediction method for fitted Spatial EM objects. This function validates the
+  requested output <code>type</code> and dispatches to a model-family-specific prediction
+  routine (currently <code>predict_spatial_em_probit()</code> for <code>"spatial_em_probit"</code> fits).
+</p>
+
+<h4>Example call</h4>
+<pre><code># Fit using the public wrapper
+fit &lt;- fit_spatial_em(
+  formula  = y ~ x1 + x2 + x3,
+  data     = dat,
+  coords   = c("lon","lat"),
+  family   = "probit",
+  ml_model = "xgboost",
+  correlation_params = list(range = 0.25, nugget = 1e-6, smoothness = 1.5),
+  ml_args = list(max_depth = 4, eta = 0.1)
+)
+
+# Predict probabilities (default response scale for probit)
+p_hat &lt;- predict(fit, newdata = dat_new, type = "response")
+
+# Predict latent link scale Z (probit latent field)
+z_hat &lt;- predict(fit, newdata = dat_new, type = "link")
+
+# Predict whitened latent scale Zw (internal/diagnostics)
+zw_hat &lt;- predict(fit, newdata = dat_new, type = "latent_w")</code></pre>
+
+<h4>Inputs</h4>
+<ul>
+  <li><code>object</code> — A fitted Spatial EM object with class <code>"spatial_em"</code> and a
+      supported family-specific class (e.g., <code>"spatial_em_probit"</code>).</li>
+
+  <li><code>newdata</code> — Data frame of prediction locations. Must contain:
     <ul>
-      <li><code>formula</code>, <code>terms</code> — model specification objects used to rebuild design matrices.</li>
-      <li><code>vecchia</code> — Vecchia structure (contains ordering, neighbor lists, coefficients, conditional variances, etc.).</li>
-      <li><code>rf_model</code> — Final ranger regression model used for the mean on the whitened scale.</li>
-      <li><code>Xw</code> — Whitened covariate matrix used in the M-step.</li>
-      <li><code>locs</code> — Coordinate matrix.</li>
-      <li><code>Y</code> — Binary response vector (forced to 0/1).</li>
-      <li><code>Zw</code> — Final whitened latent field mean (internal EM state).</li>
-      <li><code>Z_hat</code> — Final reconstructed correlated latent field at training locations.</li>
-      <li><code>correlation_params</code>, <code>ranger_args</code> — hyperparameters used for the fit.</li>
-      <li><code>em_max_iter</code>, <code>em_tol</code>, <code>damping</code> — EM control settings.</li>
+      <li>all covariates needed by the fitted model terms, and</li>
+      <li>the coordinate columns specified by <code>coords</code>.</li>
+    </ul>
+  </li>
+
+  <li><code>coords</code> — Coordinate specification (defaults to <code>object$coords</code>).</li>
+
+  <li><code>type</code> — Output scale:
+    <ul>
+      <li><code>"response"</code>: predicted probabilities <code>P(Y=1)</code></li>
+      <li><code>"link"</code>: correlated latent field <code>Z</code></li>
+      <li><code>"latent_w"</code>: whitened latent field <code>Zw</code></li>
+    </ul>
+  </li>
+
+  <li><code>...</code> — Additional arguments forwarded to the backend prediction function.</li>
+</ul>
+
+<h4>Outputs</h4>
+<ul>
+  <li>
+    A numeric vector of predictions (length equals the number of valid prediction rows after any
+    required missing-value filtering performed by the backend).
+  </li>
+  <li>
+    The meaning of returned values depends on <code>type</code> and the model family.</li>
+</ul>
+</div>
+
+
+<div class="card backend"><h2 style="margin-top:0">Backend: probit</h2><p class="muted">Model-specific implementations used by the public wrappers (probit family).</p></div>
+<div class="card" id="fit_spatial_em_probit">
+<h3><code>fit_spatial_em_probit()</code></h3>
+<h4>Purpose</h4>
+<p>
+  Predict from a fitted probit Spatial EM model (<code>"spatial_em_probit"</code>) at new locations.
+  The function:
+  (1) rebuilds the design matrix for <code>newdata</code> using stored <code>terms</code>,
+  (2) drops rows with missing required covariates while keeping coordinates aligned,
+  (3) computes Vecchia-style prediction coefficients against training locations,
+  (4) whitens new covariates (<code>Xw_new</code>),
+  (5) predicts the whitened latent mean <code>Zw</code> using the fitted ML backend
+      (<code>object$ml_model</code> / <code>object$ml_fit</code>),
+  (6) re-correlates to the latent field scale <code>Z</code>,
+  and (7) returns probabilities, <code>Z</code>, or <code>Zw</code> depending on <code>type</code>.
+</p>
+
+<h4>Example call</h4>
+<pre><code># Predict probabilities P(Y=1)
+p_hat &lt;- predict_spatial_em_probit(
+  object  = fit_probit,
+  newdata = dat_new,
+  coords  = c("lon","lat"),
+  type    = "response"
+)
+
+# Latent field on link scale (Z)
+z_hat &lt;- predict_spatial_em_probit(fit_probit, dat_new, coords = c("lon","lat"), type = "link")
+
+# Whitened latent scale (Zw)
+zw_hat &lt;- predict_spatial_em_probit(fit_probit, dat_new, coords = c("lon","lat"), type = "latent_w")</code></pre>
+
+<h4>Inputs</h4>
+<ul>
+  <li><code>object</code> — A fitted model object of class <code>"spatial_em_probit"</code>. Must contain
+      <code>terms</code>, <code>vecchia</code>, <code>correlation_params</code>, <code>max_neighbors</code>,
+      training <code>X</code>, training <code>Z_hat</code>, and ML components <code>ml_model</code> and <code>ml_fit</code>.</li>
+
+  <li><code>newdata</code> — Data frame of prediction locations. Must include:
+    <ul>
+      <li>all covariates required by <code>object$terms</code></li>
+      <li>coordinate columns specified by <code>coords</code></li>
+    </ul>
+    Rows with missing required covariates are removed (using <code>complete.cases()</code> on the model frame),
+    and coordinates are extracted from the filtered rows to maintain alignment.
+  </li>
+
+  <li><code>coords</code> — Coordinate specification (defaults to <code>object$coords</code>).
+      Typically a character vector like <code>c("x","y")</code> or <code>c("lon","lat")</code>.</li>
+
+  <li><code>type</code> — Output scale:
+    <ul>
+      <li><code>"response"</code>: predicted probabilities <code>pnorm(Z_pred)</code></li>
+      <li><code>"link"</code>: correlated latent field predictions <code>Z_pred</code></li>
+      <li><code>"latent_w"</code>: whitened latent predictions <code>Zw_pred</code></li>
+    </ul>
+  </li>
+
+  <li><code>...</code> — Additional arguments forwarded to the ML backend’s <code>predict()</code> method.
+      (Useful for backends that accept prediction-time options.)</li>
+</ul>
+
+<h4>Outputs</h4>
+<ul>
+  <li>
+    A numeric vector of length <code>m</code>, where <code>m</code> is the number of rows in <code>newdata</code>
+    that remain after filtering missing required covariates.
+  </li>
+  <li>
+    Returned values depend on <code>type</code>:
+    <ul>
+      <li><code>"latent_w"</code>: whitened latent predictions <code>Zw_pred</code></li>
+      <li><code>"link"</code>: correlated latent predictions <code>Z_pred</code></li>
+      <li><code>"response"</code>: probabilities <code>pnorm(Z_pred)</code></li>
+    </ul>
+  </li>
+  <li class="muted">
+    Notes:
+    <ul>
+      <li>Requires the <code>fields</code> package for <code>fields::Matern()</code>.</li>
+      <li>Neighbor selection for prediction uses nearest training points (up to <code>max_neighbors</code>)
+          in Vecchia order and computes coefficients via Cholesky solve.</li>
+      <li>Small negative <code>v_u</code> values are optionally clamped to a tiny positive number for numerical stability.</li>
     </ul>
   </li>
 </ul>
@@ -244,8 +269,8 @@ fit &lt;- fit_spatial_em_probit_ranger(
 
 
 
-<div class="card" id="predict_spatial_em_probit_ranger-">
-<h3><code>predict_spatial_em_probit_ranger()</code></h3>
+<div class="card" id="predict_spatial_em_probit">
+<h3><code>predict_spatial_em_probit()</code></h3>
 <h4>Purpose</h4>
 <p>
   Generate predictions from a fitted <code>spatial_em_probit_ranger</code> model at new locations.
@@ -263,7 +288,7 @@ fit &lt;- fit_spatial_em_probit_ranger(
 <h4>Example call</h4>
 <pre><code># dat_new must contain the covariates used in the original formula
 # and the coordinate columns specified by coords
-p_hat &lt;- predict_spatial_em_probit_ranger(
+p_hat &lt;- predict_spatial_em_probit(
   object  = fit,
   newdata = dat_new,
   coords  = c("lon","lat"),
@@ -271,19 +296,19 @@ p_hat &lt;- predict_spatial_em_probit_ranger(
 )
 
 # latent (probit) link scale (Z)
-z_hat &lt;- predict_spatial_em_probit_ranger(
+z_hat &lt;- predict_spatial_em_probit(
   fit, dat_new, coords = c("lon","lat"), type = "link"
 )
 
 # internal whitened latent scale (Zw)
-zw_hat &lt;- predict_spatial_em_probit_ranger(
+zw_hat &lt;- predict_spatial_em_probit(
   fit, dat_new, coords = c("lon","lat"), type = "latent_w"
 )</code></pre>
 
 <h4>Inputs</h4>
 <ul>
   <li><code>object</code> — A fitted model object of class <code>"spatial_em_probit_ranger"</code>
-    (returned by <code>fit_spatial_em_probit_ranger()</code>).</li>
+    (returned by <code>fit_spatial_em_probit()</code>).</li>
 
   <li><code>newdata</code> — Data frame of new observations to predict at. Must include:
     <ul>

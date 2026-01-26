@@ -1,0 +1,200 @@
+<!doctype html>
+<html><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Vignette</title>
+<link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+<header><div class="wrap nav">
+<a href="index.html">Home</a>
+<a href="vignette.html">Vignette</a>
+<a href="fit-predict.html">Fit &amp; Predict</a>
+<a href="tuning.html">Tuning</a>
+<a href="vecchia.html">Vecchia</a>
+<a href="utilities.html">Utilities</a>
+<a href="ml-backends.html">ML Backends</a>
+<a href="concepts.html">Concepts</a>
+</div></header>
+<main><div class="wrap">
+
+<h2>Spatial EM Vignette</h2>
+    In this vignette, we first simulate a binary response using a probit latent-variable model:
+    <code>Z(ℓ) = m(X) + η(ℓ)</code>, where <code>η(ℓ)</code> is a spatial Gaussian process (Matérn),
+    and <code>Y = 1{Z &gt; 0}</code>.
+  </p>
+  <p>
+    We then fit a Spatial EM probit model using a <strong>ranger</strong> mean model and a Vecchia approximation for the GP.
+  </p>
+
+<h2>1. Setup</h2>
+<p>Load packages and ensure Spatial EM functions are available (e.g., sourced or installed).</p>
+<pre><code>library(tidyverse)
+library(fields)   # Matérn correlation + distances
+library(MASS)     # mvrnorm
+
+# Source your Spatial EM code (example)
+# source("Spatial_EM_Utilities.R")
+# source("Spatial_EM_Probit.R")
+# source("Spatial_EM_Wrappers.R")
+# source("Spatial_EM_ML.R")</code></pre>
+
+<h2>2. Simulate a spatial probit dataset</h2>
+<p>
+  We create covariates <code>(x1,…,x6)</code>, a nonlinear mean function <code>m(X)</code>,
+  and a spatial Matérn GP residual over locations <code>(lon,lat)</code>.
+</p>
+
+<pre><code>set.seed(123)
+n &lt;- 500
+
+# Locations on [0,1]^2
+locs &lt;- cbind(runif(n, 0, 1), runif(n, 0, 1))
+colnames(locs) &lt;- c("lon", "lat")
+
+# Signal covariates
+x1 &lt;- rnorm(n)
+x2 &lt;- rnorm(n)
+x3 &lt;- rbinom(n, size = 1, prob = 0.4)
+
+# Noise covariates
+x4 &lt;- rnorm(n)
+x5 &lt;- rbinom(n, size = 1, prob = 0.5)
+x6 &lt;- rnorm(n)
+
+# Nonlinear mean function (no lon/lat)
+mfun &lt;- function(x1, x2, x3) {
+  1.8 * sin(2.5 * x1) +
+    1.4 * cos(2.0 * x2) +
+    1.6 * x3 * sin(3.0 * x1) -
+    1.2 * (x1 * x2 &gt; 0.7)
+}
+mX &lt;- mfun(x1, x2, x3)
+
+# Spatial GP residual (Matérn)
+smooth_true &lt;- 0.5
+target_cor  &lt;- 0.05
+nugget_true &lt;- 0.25
+
+D &lt;- fields::rdist(locs)
+range_true &lt;- fields::Matern.cor.to.range(
+  d          = sqrt(2),
+  cor.target = target_cor,
+  nu         = smooth_true
+)
+
+R_true &lt;- (1 - nugget_true) * fields::Matern(D, range = range_true, smoothness = smooth_true) +
+  nugget_true * diag(n)
+
+sigma_w &lt;- sd(mX)
+eta &lt;- sigma_w * as.numeric(MASS::mvrnorm(1, mu = rep(0, n), Sigma = R_true))
+
+# Probit latent field + binary response
+Z_true &lt;- mX + eta
+Y_num  &lt;- as.integer(Z_true &gt; 0)
+Y_fac  &lt;- factor(Y_num, levels = c(0, 1))
+
+sim_df &lt;- data.frame(
+  y   = Y_fac,
+  lon = locs[, 1],
+  lat = locs[, 2],
+  x1  = x1, x2 = x2, x3 = x3,
+  x4  = x4, x5 = x5, x6 = x6
+)</code></pre>
+
+<h2>3. Train / test split</h2>
+<pre><code>set.seed(456)
+train_idx &lt;- sample(seq_len(n), size = floor(0.7 * n))
+test_idx  &lt;- setdiff(seq_len(n), train_idx)
+
+train_df &lt;- sim_df[train_idx, , drop = FALSE]
+test_df  &lt;- sim_df[test_idx,  , drop = FALSE]
+
+y_test_num &lt;- as.numeric(test_df$y) - 1</code></pre>
+
+<h2>4. Tune + fit a Spatial EM probit model (ranger backend)</h2>
+<p>
+  We tune spatial correlation parameters (and a small ranger grid) using spatial CV.
+  Then we extract the best configuration and refit on the full training set.
+</p>
+
+<pre><code># Spatial grid (example: choose a small grid for the vignette)
+rng_range &lt;- c(
+  fields::Matern.cor.to.range(0.01, nu = smooth_true, cor.target = 0.05),
+  fields::Matern.cor.to.range(sqrt(2), nu = smooth_true, cor.target = 0.5)
+)
+
+spatial_grid &lt;- expand.grid(
+  nugget        = seq(0.05, 0.95, length = 5),
+  range         = exp(seq(log(rng_range[1]), log(rng_range[2]), length = 5)),
+  smoothness    = smooth_true,
+  max_neighbors = 30L
+)
+
+ml_grid_ranger &lt;- expand.grid(
+  num.trees      = c(250L),
+  mtry           = c(2L, 4L, 6L),
+  min.node.size  = c(1L, 5L)
+)
+
+tune_B &lt;- tune_spatial_em(
+  formula       = y ~ x1 + x2 + x3 + x4 + x5 + x6,
+  data          = train_df,
+  coords        = c("lon", "lat"),
+  family        = "probit",
+  ml_model      = "ranger",
+  spatial_grid  = spatial_grid,
+  ml_grid       = ml_grid_ranger,
+  cv_scheme     = "mixed",
+  K             = 5,
+  sprinkle_frac = 0.10,
+  seed          = 1,
+  ordering      = "maxmin",
+  em_max_iter   = 30,
+  em_tol        = 1e-3,
+  damping       = 1.0,
+  num_cores     = 4,
+  num_cores_vecchia = 1,
+  verbose       = TRUE
+)
+
+best_B &lt;- extract_best_config(tune_B, metric = "auc")
+
+fit_B &lt;- fit_spatial_em(
+  formula            = y ~ x1 + x2 + x3 + x4 + x5 + x6,
+  data               = train_df,
+  coords             = c("lon", "lat"),
+  family             = "probit",
+  ml_model           = "ranger",
+  correlation_params = best_B$correlation_params,
+  max_neighbors      = best_B$max_neighbors,
+  ml_args            = best_B$ml_args,
+  ordering           = "maxmin",
+  em_max_iter        = 30,
+  em_tol             = 1e-3,
+  damping            = 0.7,
+  num_cores_vecchia  = 1,
+  verbose            = TRUE
+)</code></pre>
+
+<h2>5. Predict + evaluate</h2>
+<p>
+  We predict probabilities on the test set and compute a few cutoff-free metrics.
+</p>
+
+<pre><code>p_B &lt;- predict(
+  fit_B,
+  newdata = test_df,
+  coords  = c("lon", "lat"),
+  type    = "response"
+)
+
+brier  &lt;- brier_score(p_B, y_test_num)
+auc    &lt;- auc_rank(p_B, y_test_num)
+logloss &lt;- log_loss(p_B, y_test_num)
+
+c(Brier = brier, AUC = auc, LogLoss = logloss)</code></pre>
+
+</div></main>
+<footer><div class="wrap">Generated documentation</div></footer>
+</body></html>
